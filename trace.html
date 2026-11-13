@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lector Trace</title>
+<meta name="theme-color" content="#0C1218">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232443F0'/%3E%3Cpath d='M7 10h8l-4 7h12l-5 6' fill='none' stroke='%23F6E27C' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Figtree:wght@500;700;800&display=swap">
+<style>
+/* Layout: el patrón capturado ocupa la parte de arriba en grande; debajo, el visor de cámara pequeño para apuntar */
+:root{
+  --bg:#0C1218;
+  --panel:#151F29;
+  --line:#253442;
+  --ink:#EEF3F7;
+  --muted:#8EA1B2;
+  --trace:#F6E27C;
+  --start:#2EE06B;
+  --end:#FF4B3A;
+  --red:#F0604A;
+  --num:"Bungee","Arial Black",system-ui,sans-serif;
+  --ui:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:500 15px/1.4 var(--ui);-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+button:focus-visible{outline:3px solid var(--trace);outline-offset:2px}
+
+.app{min-height:100%;display:flex;flex-direction:column;gap:12px;max-width:620px;margin:0 auto;
+  padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:10px 16px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.top h1{margin:0;font:800 17px/1.1 var(--ui)}
+.pill{display:inline-flex;align-items:center;gap:7px;font:700 13px/1 var(--ui);padding:7px 11px;border-radius:999px;background:var(--panel);color:var(--muted);white-space:nowrap}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.rec{color:var(--trace)}
+.pill.done{color:var(--start)}
+
+.cap{background:var(--panel);border-radius:18px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.capbox{position:relative;display:flex;align-items:center;justify-content:center;min-height:240px;border-radius:12px;background:#05080B;overflow:hidden}
+.capbox canvas{display:block;max-width:100%;max-height:58vh;width:auto;height:auto}
+.empty{padding:24px;text-align:center;color:var(--muted);max-width:34ch;text-wrap:pretty}
+.legend{display:flex;align-items:center;gap:8px;font:700 13px/1.3 var(--ui);color:var(--muted);flex-wrap:wrap}
+.grad{width:90px;height:8px;border-radius:4px;background:linear-gradient(90deg,var(--start),#F6E27C,var(--end))}
+.legend b{color:var(--ink)}
+.thumbs{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.thumbs button{flex:0 0 auto;border:2px solid transparent;border-radius:10px;padding:0;background:#05080B;cursor:pointer;position:relative}
+.thumbs button[aria-current="true"]{border-color:var(--trace)}
+.thumbs canvas{display:block;width:64px;height:64px;object-fit:contain;border-radius:8px}
+.thumbs span{position:absolute;left:4px;top:3px;font:800 11px/1 var(--ui);color:var(--ink);text-shadow:0 1px 2px #000}
+
+.live{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+.stage{position:relative;width:100%;aspect-ratio:3/4;max-height:34vh;background:#05080B;border-radius:14px;overflow:hidden}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.stage video{object-fit:contain}
+.side{display:flex;flex-direction:column;gap:8px;min-width:0}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:11px 12px;font:700 14px/1.1 var(--ui);cursor:pointer;text-align:left}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.slider{display:flex;align-items:center;gap:8px;font:700 13px/1 var(--ui);color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px;min-width:0}
+.slider input{flex:1;min-width:0;accent-color:var(--trace)}
+.stat{font:700 12px/1.4 var(--ui);color:var(--muted)}
+
+.start{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(5,8,11,.94);
+  padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px));padding-block:20px}
+.start .in{max-width:420px;display:flex;flex-direction:column;gap:16px}
+.start h2{margin:0;font:400 26px/1.1 var(--num);color:var(--trace)}
+.start ol{margin:0;padding-left:20px;color:var(--muted);display:grid;gap:8px}
+.start ol b{color:var(--ink)}
+.go{align-self:flex-start;border:0;border-radius:12px;background:var(--trace);color:#2B2300;font:800 17px/1 var(--ui);padding:15px 22px;cursor:pointer}
+.err{margin:0;color:var(--red);font-weight:700}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <h1>Lector Trace</h1>
+    <span class="pill" id="status">Cámara apagada</span>
+  </header>
+
+  <section class="cap" aria-live="polite">
+    <div class="capbox" id="capbox">
+      <p class="empty" id="empty">Cuando salga un patrón y desaparezca, aquí lo verás entero, de verde (inicio) a rojo (final).</p>
+      <canvas id="cap" hidden></canvas>
+    </div>
+    <div class="legend"><span>Inicio</span><span class="grad" aria-hidden="true"></span><span>Final</span><span id="capInfo"></span></div>
+    <div class="thumbs" id="thumbs"></div>
+  </section>
+
+  <section class="live">
+    <div class="stage">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay" aria-hidden="true"></canvas>
+    </div>
+    <div class="side">
+      <button type="button" class="btn" id="debug" aria-pressed="false">Ver detección</button>
+      <button type="button" class="btn" id="clear">Borrar patrones</button>
+      <label class="slider" id="zoomBox" hidden>Zoom <input type="range" id="zoom"></label>
+      <div class="stat" id="stat">—</div>
+    </div>
+  </section>
+</main>
+
+<div class="start" id="start">
+  <div class="in">
+    <h2>Lector Trace</h2>
+    <ol>
+      <li>Pon este móvil <b>a 20–30 cm</b> del móvil del juego, los dos <b>en vertical</b>, apuntando a su pantalla.</li>
+      <li>Que se vea entera la zona de los puntos y sin reflejos.</li>
+      <li>Cuando el patrón desaparezca, arriba te queda dibujado de <b>verde (inicio)</b> a <b>rojo (final)</b>.</li>
+    </ol>
+    <button type="button" class="go" id="go">Cámara en directo</button>
+    <p class="err" id="err" hidden></p>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id);};
+var video=$('video'), overlay=$('overlay'), octx=overlay.getContext('2d');
+var proc=document.createElement('canvas'), pctx=proc.getContext('2d',{willReadFrequently:true});
+var bestCv=document.createElement('canvas'), bctx=bestCv.getContext('2d');
+var PROC_LONG=420, END_MS=320, MAX_CAPS=6, HI=2;
+var W=0,H=0,N=0, raw,cur,first,hits;
+var state='idle', present=0, t0=0, lastSeen=0, peak=0, debug=false, captures=[], viewing=-1, frames=0;
+
+function alloc(w,h){
+  W=w;H=h;N=w*h;proc.width=w;proc.height=h;bestCv.width=w*HI;bestCv.height=h*HI;
+  raw=new Uint8Array(N);cur=new Uint8Array(N);first=new Float32Array(N);hits=new Uint16Array(N);
+  resetAcc();
+}
+function resetAcc(){first.fill(-1);hits.fill(0);peak=0;}
+
+// Píxel del trazo: amarillo claro sobre el azul del juego
+function classify(d){
+  var cnt=0;
+  for(var i=0,p=0;i<N;i++,p+=4){
+    var r=d[p],g=d[p+1],b=d[p+2], mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b), v=0;
+    if(mx>=120){
+      var dd=mx-mn, s=dd/mx;
+      if(dd>0){
+        var h; if(mx===r){h=60*(g-b)/dd;if(h<0)h+=360;} else if(mx===g) h=60*(b-r)/dd+120; else h=60*(r-g)/dd+240;
+        if(h>=36&&h<=74&&((s>=0.26&&mx>=128)||(s>=0.12&&mx>=230))) v=1;
+      }
+    }
+    raw[i]=v;
+  }
+  // quito puntos sueltos: hace falta al menos 2 vecinos del trazo
+  for(var y=0;y<H;y++)for(var x=0;x<W;x++){var j=y*W+x,k=0;
+    if(raw[j]){ if(x>0&&raw[j-1])k++; if(x<W-1&&raw[j+1])k++; if(y>0&&raw[j-W])k++; if(y<H-1&&raw[j+W])k++; }
+    cur[j]=(raw[j]&&k>=2)?1:0; cnt+=cur[j];}
+  return cnt;
+}
+
+function process(){
+  if(video.readyState<2||!video.videoWidth) return;
+  var vw=video.videoWidth,vh=video.videoHeight,sc=PROC_LONG/Math.max(vw,vh),w=Math.round(vw*sc),h=Math.round(vh*sc);
+  if(w!==W||h!==H) alloc(w,h);
+  pctx.drawImage(video,0,0,W,H);
+  var d=pctx.getImageData(0,0,W,H).data;
+  var P=classify(d), now=performance.now(), minP=Math.max(40,N*0.0003);
+  frames++;
+  if(state==='idle'){
+    present=P>=minP?present+1:0;
+    if(present>=2){state='rec';t0=now;lastSeen=now;resetAcc();setStatus('rec');}
+  }
+  if(state==='rec'){
+    if(P>=Math.max(minP*0.6,peak*0.12)) lastSeen=now;
+    var t=now-t0;
+    for(var i=0;i<N;i++) if(cur[i]){ if(hits[i]<65535)hits[i]++; if(first[i]<0) first[i]=t; }
+    if(P>peak){peak=P;bctx.drawImage(video,0,0,bestCv.width,bestCv.height);}
+    if(now-lastSeen>END_MS) endRec(now);
+  }
+  drawOverlay(P);
+  if(frames%10===0) $('stat').textContent='Trazo visto: '+P+' px';
+}
+
+function endRec(now){
+  state='idle'; present=0;
+  var dur=(lastSeen-t0)/1000, idx=[], tmin=1e9, tmax=-1;
+  var minHits=dur>0.6?2:1;
+  for(var i=0;i<N;i++) if(hits[i]>=minHits){idx.push(i); var f=first[i]; if(f<tmin)tmin=f; if(f>tmax)tmax=f;}
+  if(idx.length<60 || dur<0.25){setStatus('idle');return;}
+  var cap=buildCapture(idx,tmin,tmax,dur);
+  captures.push(cap); if(captures.length>MAX_CAPS) captures.shift();
+  show(captures.length-1); renderThumbs(); setStatus('done');
+  try{navigator.vibrate&&navigator.vibrate(50);}catch(e){}
+}
+
+function color(t){ // 0 verde → 0,5 amarillo → 1 rojo
+  var a=[46,224,107], b=[246,226,124], c=[255,75,58], u, x, y;
+  if(t<0.5){u=t/0.5;x=a;y=b;} else {u=(t-0.5)/0.5;x=b;y=c;}
+  return [x[0]+(y[0]-x[0])*u, x[1]+(y[1]-x[1])*u, x[2]+(y[2]-x[2])*u];
+}
+
+function buildCapture(idx,tmin,tmax,dur){
+  var x0=W,y0=H,x1=0,y1=0;
+  idx.forEach(function(i){var x=i%W,y=(i-x)/W; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;});
+  var bw=x1-x0+1,bh=y1-y0+1,m=Math.round(Math.max(bw,bh)*0.22)+10;
+  x0=Math.max(0,x0-m);y0=Math.max(0,y0-m);x1=Math.min(W-1,x1+m);y1=Math.min(H-1,y1+m);
+  var cw=x1-x0+1,ch=y1-y0+1,k=Math.max(1,Math.min(4,560/Math.max(cw,ch)));
+  // capa de color a la resolución de proceso, engordada 1 px
+  var lay=document.createElement('canvas'); lay.width=cw; lay.height=ch;
+  var lctx=lay.getContext('2d'), im=lctx.createImageData(cw,ch), p=im.data, span=Math.max(1,tmax-tmin);
+  var order=idx.slice().sort(function(a,b){return first[a]-first[b];});
+  order.forEach(function(i){
+    var x=i%W-x0,y=(i-i%W)/W-y0,c=color((first[i]-tmin)/span);
+    for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){var X=x+dx,Y=y+dy; if(X<0||Y<0||X>=cw||Y>=ch)continue;
+      var q=(Y*cw+X)*4; p[q]=c[0];p[q+1]=c[1];p[q+2]=c[2];p[q+3]=255;}
+  });
+  lctx.putImageData(im,0,0);
+  var cv=document.createElement('canvas'); cv.width=Math.round(cw*k); cv.height=Math.round(ch*k);
+  var cx=cv.getContext('2d');
+  cx.drawImage(bestCv,x0*HI,y0*HI,cw*HI,ch*HI,0,0,cv.width,cv.height);
+  cx.fillStyle='rgba(5,8,11,.55)'; cx.fillRect(0,0,cv.width,cv.height);
+  cx.imageSmoothingEnabled=true; cx.drawImage(lay,0,0,cv.width,cv.height);
+  // marcas de inicio y final
+  function centroid(list){var sx=0,sy=0;list.forEach(function(i){sx+=i%W;sy+=(i-i%W)/W;});return {x:(sx/list.length-x0)*k,y:(sy/list.length-y0)*k};}
+  var n=Math.max(4,Math.round(order.length*0.05));
+  var s=centroid(order.slice(0,n)), e=centroid(order.slice(-n));
+  var r=Math.max(11,cv.width*0.03);
+  function mark(pt,fill,label){
+    cx.beginPath();cx.arc(pt.x,pt.y,r,0,Math.PI*2);cx.fillStyle=fill;cx.fill();cx.lineWidth=3;cx.strokeStyle='#FFFFFF';cx.stroke();
+    cx.font='800 '+Math.round(r*0.95)+'px Figtree,system-ui,sans-serif';cx.textAlign='center';cx.textBaseline='middle';
+    cx.fillStyle='#0C1218';cx.fillText(label,pt.x,pt.y+1);
+  }
+  mark(e,'#FF4B3A','F'); mark(s,'#2EE06B','1');
+  return {cv:cv,dur:dur,n:0,start:{x:(s.x/k+x0)/W,y:(s.y/k+y0)/H},end:{x:(e.x/k+x0)/W,y:(e.y/k+y0)/H},px:idx.length};
+}
+
+var count=0;
+function show(i){
+  viewing=i; var c=captures[i]; if(!c) return;
+  if(!c.n){count++; c.n=count;}
+  var dst=$('cap'); dst.width=c.cv.width; dst.height=c.cv.height; dst.getContext('2d').drawImage(c.cv,0,0);
+  dst.hidden=false; $('empty').hidden=true;
+  $('capInfo').innerHTML='· Patrón <b>'+c.n+'</b> · '+c.dur.toFixed(1).replace('.',',')+' s';
+  renderThumbs();
+}
+function renderThumbs(){
+  var box=$('thumbs'); box.textContent='';
+  captures.forEach(function(c,i){
+    var b=document.createElement('button'); b.type='button'; b.setAttribute('aria-current',String(i===viewing));
+    b.setAttribute('aria-label','Patrón '+c.n);
+    var t=document.createElement('canvas'); t.width=128; t.height=128; var tx=t.getContext('2d');
+    var s=Math.min(128/c.cv.width,128/c.cv.height); tx.drawImage(c.cv,(128-c.cv.width*s)/2,(128-c.cv.height*s)/2,c.cv.width*s,c.cv.height*s);
+    var l=document.createElement('span'); l.textContent=c.n;
+    b.appendChild(t); b.appendChild(l); b.addEventListener('click',function(){show(i);}); box.appendChild(b);
+  });
+}
+function setStatus(s){
+  var st=$('status');
+  if(s==='rec'){st.className='pill rec';st.textContent='Leyendo patrón';}
+  else if(s==='done'){st.className='pill done';st.textContent='Patrón listo';}
+  else {st.className='pill';st.textContent='Esperando patrón';}
+}
+
+function drawOverlay(P){
+  var cw=overlay.clientWidth,ch=overlay.clientHeight,dpr=Math.min(window.devicePixelRatio||1,2);
+  if(overlay.width!==Math.round(cw*dpr)||overlay.height!==Math.round(ch*dpr)){overlay.width=Math.round(cw*dpr);overlay.height=Math.round(ch*dpr);}
+  octx.setTransform(dpr,0,0,dpr,0,0); octx.clearRect(0,0,cw,ch);
+  if(!debug) return;
+  var s=Math.min(cw/W,ch/H), ox=(cw-W*s)/2, oy=(ch-H*s)/2;
+  octx.fillStyle='rgba(0,255,220,.9)';
+  for(var y=0;y<H;y+=1)for(var x=0;x<W;x+=1){ if(cur[y*W+x]) octx.fillRect(ox+x*s,oy+y*s,Math.max(1,s),Math.max(1,s)); }
+}
+
+var gen=0;
+function loop(){
+  var my=++gen;
+  if('requestVideoFrameCallback' in HTMLVideoElement.prototype){
+    var f=function(){if(my!==gen)return;process();video.requestVideoFrameCallback(f);};
+    video.requestVideoFrameCallback(f);
+  } else {
+    var last=-1,g=function(){if(my!==gen)return;if(video.currentTime!==last){last=video.currentTime;process();}requestAnimationFrame(g);};
+    requestAnimationFrame(g);
+  }
+}
+
+var track=null;
+function askWake(){try{if(navigator.wakeLock&&document.visibilityState==='visible')navigator.wakeLock.request('screen').catch(function(){});}catch(e){}}
+document.addEventListener('visibilitychange',askWake);
+
+$('go').addEventListener('click',function(){
+  var err=$('err'); err.hidden=true;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    err.textContent='Este navegador no deja usar la cámara. Abre el enlace en Safari o Chrome, no dentro de WhatsApp o Instagram.'; err.hidden=false; return;
+  }
+  navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:60}}})
+  .then(function(stream){
+    video.srcObject=stream; track=stream.getVideoTracks()[0];
+    return video.play().then(function(){
+      $('start').hidden=true; setStatus('idle'); loop(); askWake();
+      var caps=track.getCapabilities?track.getCapabilities():{};
+      if(caps.zoom&&caps.zoom.max>caps.zoom.min){
+        var inp=$('zoom'); inp.min=caps.zoom.min; inp.max=caps.zoom.max; inp.step=caps.zoom.step||0.1; inp.value=caps.zoom.min; $('zoomBox').hidden=false;
+        inp.addEventListener('input',function(){track.applyConstraints({advanced:[{zoom:+inp.value}]}).catch(function(){});});
+      }
+    });
+  })
+  .catch(function(e){
+    var name=e&&e.name;
+    err.textContent= name==='NotAllowedError' ? 'Permiso de cámara denegado. Actívalo para esta web en los ajustes del navegador (en iPhone: Ajustes > Safari > Cámara) y recarga.'
+      : name==='NotReadableError' ? 'Otra app está usando la cámara. Ciérrala y vuelve a probar.'
+      : 'No he podido abrir la cámara ('+(name||'error')+'). Recarga y prueba otra vez.';
+    err.hidden=false;
+  });
+});
+$('debug').addEventListener('click',function(){debug=!debug;this.setAttribute('aria-pressed',String(debug));});
+$('clear').addEventListener('click',function(){captures=[];viewing=-1;count=0;renderThumbs();$('cap').hidden=true;$('empty').hidden=false;$('capInfo').textContent='';});
+
+window.__trace={captures:function(){return captures.map(function(c){return {n:c.n,dur:+c.dur.toFixed(2),start:c.start,end:c.end,px:c.px};});}};
+})();
+</script>
+</body>
+</html>
