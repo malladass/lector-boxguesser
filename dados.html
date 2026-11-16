@@ -148,7 +148,7 @@ var $=function(id){return document.getElementById(id);};
 var video=$('video'), overlay=$('overlay'), octx=overlay.getContext('2d');
 var proc=document.createElement('canvas'), pctx=proc.getContext('2d',{willReadFrequently:true});
 var snap=$('snap'), sctx=snap.getContext('2d');
-var PROC_LONG=520, STABLE=4, DICE=4;
+var PROC_LONG=520, STABLE=6, DICE=4;
 var W=0,H=0,N=0, cls,cid,hid,stack;
 
 function alloc(w,h){W=w;H=h;N=w*h;proc.width=w;proc.height=h;cls=new Uint8Array(N);cid=new Int32Array(N);hid=new Int32Array(N);stack=new Int32Array(N);}
@@ -166,11 +166,11 @@ function classify(d){
     if(mx>=60 && (mx-mn)<=0.32*mx){hist[mx]++;tot++;}
   }
   BR=230; if(tot>50){var t=tot*0.985,a=0;for(var v0=0;v0<256;v0++){a+=hist[v0];if(a>=t){BR=v0;break;}}}
-  var thr=Math.max(85,BR*0.6);
+  var thr=Math.max(85,BR*0.6), dark=Math.max(60,BR*0.36);
   for(i=0,p=0;i<N;i++,p+=4){
     var r2=d[p],g2=d[p+1],b2=d[p+2], mx2=r2>g2?(r2>b2?r2:b2):(g2>b2?g2:b2), mn2=r2<g2?(r2<b2?r2:b2):(g2<b2?g2:b2), s2=mx2?(mx2-mn2)/mx2:0, v=0;
-    if(mx2>=thr && s2<=0.32 && b2<=r2+12) v=1;
-    else if(b2>=r2+12 && b2>=g2 && s2>=0.3 && mx2<=210) v=2;
+    if(mx2>=thr && s2<=0.32 && b2<=r2+40) v=1;
+    else if(mx2<=dark || (b2>=r2+12 && b2>=g2 && s2>=0.3 && mx2<=210)) v=2;
     cls[i]=v;
   }
 }
@@ -220,19 +220,24 @@ function read(){
   function pipLike(h,c){
     var md=Math.min(c.x1-c.x0+1,c.y1-c.y0+1), md2=md*md;
     var bw=h.x1-h.x0+1,bh=h.y1-h.y0+1,asp=bw/bh,round=h.area/(Math.PI/4*bw*bh);
-    return h.area>=3 && h.area>=md2*0.008 && h.area<=md2*0.09 && asp>=0.45 && asp<=2.2 && round>=0.5 && h.sy2/h.area<BR*0.6;
+    return h.area>=3 && h.area>=md2*0.008 && h.area<=md2*0.09 && asp>=0.45 && asp<=2.2 && round>=0.5 && h.sy2/h.area<BR*0.42;
+  }
+  // hueco muy oscuro dentro del dado: uno o varios puntos (pegados por el desenfoque)
+  function darkHole(h,c){
+    var md=Math.min(c.x1-c.x0+1,c.y1-c.y0+1), md2=md*md;
+    return h.area>=3 && h.area>=md2*0.008 && h.area<=md2*0.3 && h.sy2/h.area<BR*0.42;
   }
   var minA=N*0.0012, dbg=window.__dbg=[], cand=dies.filter(function(c){
     if(c.filled<minA*0.5) return false;
-    var why={filled:c.filled,bbox:[c.x0,c.y0,c.x1-c.x0+1,c.y1-c.y0+1],holes:c.holes.map(function(h){return [h.area,h.x1-h.x0+1,h.y1-h.y0+1,h.nav];})}; dbg.push(why);
+    var why={filled:c.filled,bbox:[c.x0,c.y0,c.x1-c.x0+1,c.y1-c.y0+1],holes:c.holes.map(function(h){return [h.area,h.x1-h.x0+1,h.y1-h.y0+1,Math.round(h.sy2/h.area)];})}; dbg.push(why);
     if(c.filled<minA){why.no='small';return false;}
     var bw=c.x1-c.x0+1,bh=c.y1-c.y0+1,asp=bw/bh;
     if(asp<0.35||asp>2.9){why.no='aspect';return false;}
-    if(c.filled/(bw*bh)<0.4){why.no='solidity';return false;}
+    if(c.filled/(bw*bh)<0.6){why.no='solidity';return false;}
     if(!c.holes.length){why.no='noholes';return false;}
     var md=Math.min(bw,bh);
-    var odd=c.holes.filter(function(h){return h.area>=Math.max(6,md*md*0.008) && !pipLike(h,c);}).length;
-    var pl=c.holes.filter(function(h){return pipLike(h,c);}).length;
+    var odd=c.holes.filter(function(h){return h.area>=Math.max(6,md*md*0.008) && !darkHole(h,c);}).length;
+    var pl=c.holes.filter(function(h){return darkHole(h,c);}).length;
     if(!pl){why.no='nopips';return false;}
     var kk=Math.max(1,Math.round(Math.max(bw,bh)/Math.min(bw,bh)));
     if(pl>6*kk){why.no='toomany '+pl;return false;}
@@ -240,49 +245,63 @@ function read(){
     why.ring=navyRing(c); if(why.ring<0.3){why.no='ring';return false;} why.ok=1; return true;
   });
   if(!cand.length) return null;
-  // los dados tienen tamaños parecidos: me quedo con el grupo de tamaño similar más numeroso
-  var bestG=null;
-  cand.forEach(function(a){
-    var g=cand.filter(function(c){return c.filled>=a.filled*0.75 && c.filled<=a.filled*2.7;});
-    if(!bestG || g.length>bestG.length || (g.length===bestG.length && Math.abs(g.length-DICE)<Math.abs(bestG.length-DICE))) bestG=g;
+  // En este juego los dados nunca se tocan: elijo los 4 de tamaño parecido que más se parecen a un dado
+  // (cuadrados y macizos); así fuera avatares, letras y botones.
+  cand=cand.filter(function(c){return c.filled<=N*0.25;});
+  cand.forEach(function(c){
+    var bw=c.x1-c.x0+1,bh=c.y1-c.y0+1; c.k=1;
+    c.bad=Math.abs(Math.log(bw/bh))+3*Math.max(0,0.92-c.filled/(bw*bh));
   });
-  cand=bestG.filter(function(c){return c.filled<=N*0.25;});
+  var best=null;
+  cand.forEach(function(a){
+    var g=cand.filter(function(c){return c.filled>=a.filled*0.7 && c.filled<=a.filled*1.43;})
+      .sort(function(x,y){return x.bad-y.bad;}).slice(0,DICE);
+    var tb=g.reduce(function(s2,c){return s2+c.bad;},0);
+    if(!best || g.length>best.g.length || (g.length===best.g.length && tb<best.tb)) best={g:g,tb:tb};
+  });
+  cand=best?best.g:[];
   if(!cand.length) return null;
-  var areas=cand.map(function(c){return c.filled;}).sort(function(a,b){return a-b;});
-  var single=areas[Math.floor((areas.length-1)*0.35)];
   // puntos: huecos redondos de tamaño razonable
   var allP=[];
+  cand.forEach(function(c){ c.holes.forEach(function(h){if(pipLike(h,c))allP.push(h.area);}); });
+  // tamaño de un punto: mediana de los puntos redondos; si no hay, proporción del juego (≈3,3 % del dado)
+  var med, pipD;
+  if(allP.length){ allP.sort(function(a,b){return a-b;}); med=allP[Math.floor(allP.length/2)]; }
+  else { var mds=cand.map(function(c){var m=Math.min(c.x1-c.x0+1,c.y1-c.y0+1);return m*m;}).sort(function(a,b){return a-b;}); med=mds[Math.floor(mds.length/2)]*0.033; }
+  pipD=Math.sqrt(med*4/Math.PI);
   cand.forEach(function(c){
-    c.k=Math.max(1,Math.round(c.filled/single));
-    var dieA=c.filled/c.k;
-    c.pips=c.holes.filter(function(h){return pipLike(h,c);});
-    c.pips.forEach(function(h){allP.push(h.area);});
+    var list=[], n=0;
+    c.holes.forEach(function(h){
+      if(!darkHole(h,c) || h.area<med*0.4) return;
+      var m=pipLike(h,c)?1:Math.max(Math.round(Math.max(h.x1-h.x0+1,h.y1-h.y0+1)/pipD),Math.round(0.85*h.area/med));
+      h.m=Math.max(1,Math.min(m,6)); n+=h.m; list.push(h);
+    });
+    c.pips=list; c.np=Math.min(n,6*c.k);
   });
-  if(allP.length){
-    allP.sort(function(a,b){return a-b;});
-    var med=allP[Math.floor(allP.length/2)];
-    cand.forEach(function(c){c.pips=c.pips.filter(function(h){return h.area>=med*0.3&&h.area<=med*3.4;});});
-  }
-  // si salen más de 4 dados, quito los que menos se parecen a un dado
-  var med2=allP.length?allP[Math.floor(allP.length/2)]:1, tk=0;
-  cand.forEach(function(c){
-    tk+=c.k;
-    var bw=c.x1-c.x0+1,bh=c.y1-c.y0+1,mp=c.pips.length?c.pips.reduce(function(a,h){return a+h.area;},0)/c.pips.length:med2;
-    c.bad=Math.abs(Math.log(bw/bh/c.k))+Math.abs(Math.log(mp/med2))+(c.k>1?0.3:0)+(c.pips.length?0:1);
-  });
-  while(tk>DICE && cand.length>1){
-    var worst=cand.reduce(function(a,c){return c.bad>a.bad?c:a;});
-    cand.splice(cand.indexOf(worst),1); tk-=worst.k;
-  }
+  window.__lastCand=cand;
   var sum=0, dice=0, parts=[];
-  cand.forEach(function(c){var n=Math.min(c.pips.length,6*c.k);sum+=n;dice+=c.k;parts.push({n:n,k:c.k,x:c.sx/c.area,y:c.sy/c.area});});
+  cand.forEach(function(c){var n=Math.min(c.np!=null?c.np:c.pips.length,6*c.k);c.n=n;sum+=n;dice+=c.k;parts.push({n:n,k:c.k,x:c.sx/c.area,y:c.sy/c.area});});
   cand.sort(function(a,b){return (a.sx/a.area)-(b.sx/b.area);});
   return {sum:sum,dice:dice,cand:cand,parts:parts};
 }
 
 /* ---------- estado ---------- */
-var hist=[], prevKey='', prevPos=null, same=0, locked=null, moving=0, debug=false, frames=0;
-function posOf(r){return r.cand.map(function(c){return [c.sx/c.area,c.sy/c.area];}).sort(function(a,b){return a[0]-b[0];});}
+var hist=[], prevKey='', prevPos=null, prevSize=null, same=0, locked=null, moving=0, debug=false, frames=0;
+// dados en orden de lectura (por filas), para comparar fotograma a fotograma
+function ordered(r){
+  var c=r.cand.map(function(d){return {x:d.sx/d.area,y:d.sy/d.area,w:d.x1-d.x0+1,n:d.n};});
+  c.sort(function(a,b){return a.y-b.y;});
+  var rows=[],cur=[];
+  c.forEach(function(d){ if(cur.length && Math.abs(d.y-cur[0].y)>d.w*0.5){rows.push(cur);cur=[];} cur.push(d); });
+  if(cur.length) rows.push(cur);
+  var out=[]; rows.forEach(function(rw){rw.sort(function(a,b){return a.x-b.x;}); out=out.concat(rw);});
+  return out;
+}
+function posOf(o){return o.map(function(d){return [d.x,d.y];});}
+function sizeChange(a,b){
+  if(!a||!b||a.length!==b.length) return 1;
+  var m=0; for(var i=0;i<a.length;i++) m=Math.max(m,Math.abs(a[i]-b[i])/Math.max(a[i],b[i])); return m;
+}
 function moved(a,b){
   if(!a||!b||a.length!==b.length) return 99;
   var m=0; for(var i=0;i<a.length;i++) m=Math.max(m,Math.hypot(a[i][0]-b[i][0],a[i][1]-b[i][1])); return m;
@@ -296,13 +315,14 @@ function process(){
   classify(pctx.getImageData(0,0,W,H).data);
   var r=read(); frames++;
   drawOverlay(r);
-  if(!r){ same=0; prevKey=''; prevPos=null; if(locked){moving++; if(moving>3) unlock();} else setStatus('wait'); return; }
-  var key=r.sum+'|'+r.dice, pos=posOf(r), mv=moved(pos,prevPos);
-  if(key===prevKey && mv<Math.max(1.5,W*0.004)) same++; else same=0;
-  prevKey=key; prevPos=pos;
+  if(!r){ same=0; prevKey=''; prevPos=null; prevSize=null; if(locked){moving++; if(moving>3) unlock();} else setStatus('wait'); return; }
+  var o=ordered(r), key=r.dice+'|'+o.map(function(d){return d.n;}).join(','), pos=posOf(o), mv=moved(pos,prevPos);
+  var sz=o.map(function(d){return d.w;}), dsz=sizeChange(sz,prevSize);
+  if(key===prevKey && mv<Math.max(2,W*0.025) && dsz<0.07) same++; else same=0;
+  prevKey=key; prevPos=pos; prevSize=sz;
   if(same>=STABLE-1){
     moving=0;
-    if(!locked || locked.key!==key || moved(locked.pos,pos)>W*0.01) lock(r,key,pos);
+    if(!locked || locked.key!==key || moved(locked.pos,pos)>W*0.08) lock(r,key,pos);
   } else {
     moving++;
     if(locked && moving>3) unlock();
@@ -315,8 +335,7 @@ function lock(r,key,pos){
   var ok=r.dice===DICE;
   var big=$('big'); big.className='big done'; big.textContent=r.sum;
   var db=$('diceBox'); db.className='dice'+(ok?'':' bad'); $('dice').textContent=r.dice+(ok?' ✓':' ⚠');
-  r.parts.sort(function(a,b){return a.x-b.x;});
-  $('parts').textContent=r.parts.map(function(p){return p.n;}).join(' + ');
+  $('parts').textContent=ordered(r).map(function(d){return d.n;}).join(' + ');
   setStatus('done');
   hist.push({sum:r.sum,ok:ok}); renderHist();
   drawSnap(r);
@@ -352,7 +371,7 @@ function drawSnap(r){
       var x=((h.sx/h.area)-x0)*k, y=((h.sy/h.area)-y0)*k, rr=Math.max(3,Math.sqrt(h.area/Math.PI)*k*0.75);
       sctx.beginPath();sctx.arc(x,y,rr,0,Math.PI*2);sctx.fillStyle='#4ADE8F';sctx.fill();
     });
-    var n=Math.min(c.pips.length,6*c.k), lx=((c.sx/c.area)-x0)*k, ly=(c.y0-y0)*k-6, fs=Math.max(16,(c.x1-c.x0)*k*0.32);
+    var n=c.n, lx=((c.sx/c.area)-x0)*k, ly=(c.y0-y0)*k-6, fs=Math.max(16,(c.x1-c.x0)*k*0.32);
     sctx.font='800 '+Math.round(fs)+'px Figtree,system-ui,sans-serif'; sctx.textAlign='center'; sctx.textBaseline='bottom';
     sctx.lineWidth=5; sctx.strokeStyle='#0C1218'; sctx.strokeText(n,lx,Math.max(fs,ly)); sctx.fillStyle='#FFFFFF'; sctx.fillText(n,lx,Math.max(fs,ly));
   });
@@ -426,7 +445,7 @@ $('clear').addEventListener('click',function(){hist=[];renderHist();});
 window.__dados={history:function(){return hist.slice();},frames:function(){return frames;},
   analyze:function(img){var vw=img.naturalWidth,vh=img.naturalHeight,sc=PROC_LONG/Math.max(vw,vh),w=Math.round(vw*sc),h=Math.round(vh*sc);
     if(w!==W||h!==H) alloc(w,h); pctx.drawImage(img,0,0,W,H); classify(pctx.getImageData(0,0,W,H).data);
-    var r=read(); return {W:W,H:H,sum:r&&r.sum,dice:r&&r.dice,dbg:window.__dbg};}};
+    var r=read(); return {W:W,H:H,BR:BR,sum:r&&r.sum,dice:r&&r.dice,parts:r&&r.parts.map(function(p){return p.n;}),dbg:window.__dbg};}};
 })();
 </script>
 </body>
