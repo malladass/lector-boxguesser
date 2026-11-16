@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lector Dados</title>
+<meta name="theme-color" content="#0C1218">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='6' fill='%23EAE4D0'/%3E%3Ccircle cx='10' cy='10' r='3' fill='%2321234C'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%2321234C'/%3E%3Ccircle cx='22' cy='22' r='3' fill='%2321234C'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Figtree:wght@500;700;800&display=swap">
+<style>
+/* Layout: la suma ocupa la parte de arriba en enorme; debajo, foto congelada marcada y visor de cámara lado a lado */
+:root{
+  --bg:#0C1218;
+  --panel:#151F29;
+  --line:#253442;
+  --ink:#EEF3F7;
+  --muted:#8EA1B2;
+  --die:#EAE4D0;
+  --ok:#4ADE8F;
+  --warn:#FFB23E;
+  --red:#F0604A;
+  --num:"Bungee","Arial Black",system-ui,sans-serif;
+  --ui:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:500 15px/1.4 var(--ui);-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+button:focus-visible{outline:3px solid var(--die);outline-offset:2px}
+
+.app{min-height:100%;display:flex;flex-direction:column;gap:12px;max-width:620px;margin:0 auto;
+  padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:10px 16px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.top h1{margin:0;font:800 17px/1.1 var(--ui)}
+.pill{display:inline-flex;align-items:center;gap:7px;font:700 13px/1 var(--ui);padding:7px 11px;border-radius:999px;background:var(--panel);color:var(--muted);white-space:nowrap}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.spin{color:var(--warn)}
+.pill.done{color:var(--ok)}
+
+.sum{background:var(--panel);border-radius:20px;padding:12px 16px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:26vh}
+.sum .lbl{font:800 12px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.big{font:400 clamp(110px,42vw,230px)/.9 var(--num);color:var(--muted);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.big.done{color:var(--ink)}
+.big.spin{color:#3A4A5A}
+.meta{display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
+.dice{font:700 14px/1.3 var(--ui);color:var(--muted)}
+.dice b{display:block;font:400 22px/1.1 var(--num);color:var(--ink)}
+.dice.bad b{color:var(--warn)}
+.parts{font:700 13px/1.3 var(--ui);color:var(--muted);font-variant-numeric:tabular-nums}
+
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.box{position:relative;background:#05080B;border-radius:14px;overflow:hidden;aspect-ratio:3/4;max-height:36vh;width:100%}
+.box video,.box canvas{position:absolute;inset:0;width:100%;height:100%}
+.box video{object-fit:contain}
+.box canvas.fit{object-fit:contain}
+.cap{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cap small{font:700 12px/1.3 var(--ui);color:var(--muted)}
+.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:14px;text-align:center;color:var(--muted);font-size:13px}
+
+.hist{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hist .h{font:800 12px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.hist ol{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap}
+.hist li{font:400 18px/1 var(--num);background:var(--panel);border-radius:10px;padding:7px 10px;font-variant-numeric:tabular-nums}
+.hist li.weak{color:var(--warn)}
+.controls{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:11px 14px;font:700 14px/1 var(--ui);cursor:pointer}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.slider{display:flex;align-items:center;gap:8px;font:700 13px/1 var(--ui);color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 12px;flex:1 1 180px;min-width:0}
+.slider input{flex:1;min-width:0;accent-color:var(--die)}
+
+.start{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(5,8,11,.95);
+  padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px));padding-block:20px}
+.start .in{max-width:420px;display:flex;flex-direction:column;gap:16px}
+.start h2{margin:0;font:400 26px/1.1 var(--num);color:var(--die)}
+.start ol{margin:0;padding-left:20px;color:var(--muted);display:grid;gap:8px}
+.start ol b{color:var(--ink)}
+.go{align-self:flex-start;border:0;border-radius:12px;background:var(--die);color:#21234C;font:800 17px/1 var(--ui);padding:15px 22px;cursor:pointer}
+.err{margin:0;color:var(--red);font-weight:700}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <h1>Lector Dados</h1>
+    <span class="pill" id="status">Cámara apagada</span>
+  </header>
+
+  <section class="sum" aria-live="polite">
+    <div>
+      <span class="lbl">Suma</span>
+      <div class="big" id="big">–</div>
+    </div>
+    <div class="meta">
+      <div class="dice" id="diceBox">Dados<b id="dice">–</b></div>
+      <div class="parts" id="parts"></div>
+    </div>
+  </section>
+
+  <section class="row2">
+    <div class="cap">
+      <div class="box">
+        <canvas id="snap" class="fit" hidden></canvas>
+        <div class="empty" id="snapEmpty">Aquí verás la foto de los dados parados, con cada punto marcado.</div>
+      </div>
+      <small id="snapInfo">Foto de la última lectura</small>
+    </div>
+    <div class="cap">
+      <div class="box">
+        <video id="video" playsinline muted autoplay></video>
+        <canvas id="overlay" aria-hidden="true"></canvas>
+      </div>
+      <small>Cámara</small>
+    </div>
+  </section>
+
+  <section class="hist"><span class="h">Rondas</span><ol id="hist"></ol></section>
+
+  <div class="controls">
+    <button type="button" class="btn" id="debug" aria-pressed="false">Ver detección</button>
+    <button type="button" class="btn" id="clear">Borrar rondas</button>
+    <label class="slider" id="zoomBox" hidden>Zoom <input type="range" id="zoom"></label>
+  </div>
+</main>
+
+<div class="start" id="start">
+  <div class="in">
+    <h2>Lector Dados</h2>
+    <ol>
+      <li>Pon este móvil <b>a 20–30 cm</b> del móvil del juego, los dos en vertical, apuntando a su pantalla.</li>
+      <li>Que se vean los 4 dados enteros y sin reflejos.</li>
+      <li>En cuanto los dados se paran, arriba sale la <b>suma en grande</b>.</li>
+    </ol>
+    <button type="button" class="go" id="go">Cámara en directo</button>
+    <p class="err" id="err" hidden></p>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id);};
+var video=$('video'), overlay=$('overlay'), octx=overlay.getContext('2d');
+var proc=document.createElement('canvas'), pctx=proc.getContext('2d',{willReadFrequently:true});
+var snap=$('snap'), sctx=snap.getContext('2d');
+var PROC_LONG=520, STABLE=4, DICE=4;
+var W=0,H=0,N=0, cls,cid,hid,stack;
+
+function alloc(w,h){W=w;H=h;N=w*h;proc.width=w;proc.height=h;cls=new Uint8Array(N);cid=new Int32Array(N);hid=new Int32Array(N);stack=new Int32Array(N);}
+
+/* ---------- visión ---------- */
+// 1 = cara del dado (crema claro) · 2 = azul marino (fondo y puntos) · 0 = otra cosa
+var Yb=null, BR=230;
+function classify(d){
+  if(!Yb||Yb.length!==N) Yb=new Uint8Array(N);
+  // brillo de referencia: los píxeles claros y poco saturados más brillantes (las caras de los dados)
+  var hist=new Uint32Array(256), tot=0;
+  for(var i=0,p=0;i<N;i++,p+=4){
+    var r=d[p],g=d[p+1],b=d[p+2], mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
+    Yb[i]=(77*r+150*g+29*b)>>8;
+    if(mx>=60 && (mx-mn)<=0.32*mx){hist[mx]++;tot++;}
+  }
+  BR=230; if(tot>50){var t=tot*0.985,a=0;for(var v0=0;v0<256;v0++){a+=hist[v0];if(a>=t){BR=v0;break;}}}
+  var thr=Math.max(85,BR*0.6);
+  for(i=0,p=0;i<N;i++,p+=4){
+    var r2=d[p],g2=d[p+1],b2=d[p+2], mx2=r2>g2?(r2>b2?r2:b2):(g2>b2?g2:b2), mn2=r2<g2?(r2<b2?r2:b2):(g2<b2?g2:b2), s2=mx2?(mx2-mn2)/mx2:0, v=0;
+    if(mx2>=thr && s2<=0.32 && b2<=r2+12) v=1;
+    else if(b2>=r2+12 && b2>=g2 && s2>=0.3 && mx2<=210) v=2;
+    cls[i]=v;
+  }
+}
+// componentes conexas de los píxeles que cumplen want(cls)
+function label(want,ids){
+  var comps=[];
+  for(var k=0;k<N;k++) ids[k]=0;
+  for(var i=0;i<N;i++){
+    if(ids[i]||!want(cls[i])) continue;
+    var id=comps.length+1, c={id:id,area:0,nav:0,sy2:0,x0:W,y0:H,x1:0,y1:0,sx:0,sy:0,border:false,first:i}, sp=0;
+    stack[sp++]=i; ids[i]=id;
+    while(sp){
+      var j=stack[--sp], x=j%W, y=(j-x)/W;
+      c.area++; c.sx+=x; c.sy+=y; c.sy2+=Yb[j]; if(cls[j]===2) c.nav++;
+      if(x<c.x0)c.x0=x; if(x>c.x1)c.x1=x; if(y<c.y0)c.y0=y; if(y>c.y1)c.y1=y;
+      if(x===0||y===0||x===W-1||y===H-1) c.border=true;
+      if(x>0   &&!ids[j-1]&&want(cls[j-1])){ids[j-1]=id;stack[sp++]=j-1;}
+      if(x<W-1 &&!ids[j+1]&&want(cls[j+1])){ids[j+1]=id;stack[sp++]=j+1;}
+      if(y>0   &&!ids[j-W]&&want(cls[j-W])){ids[j-W]=id;stack[sp++]=j-W;}
+      if(y<H-1 &&!ids[j+W]&&want(cls[j+W])){ids[j+W]=id;stack[sp++]=j+W;}
+    }
+    comps.push(c);
+  }
+  return comps;
+}
+function isDie(v){return v===1;}
+function notDie(v){return v!==1;}
+
+function navyRing(c){ // fracción de azul marino justo alrededor de la mancha
+  var m=3, x0=c.x0-m, y0=c.y0-m, x1=c.x1+m, y1=c.y1+m, tot=0, nav=0, step=Math.max(1,Math.round((x1-x0+y1-y0)/80));
+  function at(x,y){if(x<0||y<0||x>=W||y>=H)return; tot++; if(cls[y*W+x]===2)nav++;}
+  for(var x=x0;x<=x1;x+=step){at(x,y0);at(x,y1);}
+  for(var y=y0;y<=y1;y+=step){at(x0,y);at(x1,y);}
+  return tot?nav/tot:0;
+}
+
+function read(){
+  var dies=label(isDie,cid), holes=label(notDie,hid), byId={};
+  dies.forEach(function(c){c.holes=[];c.filled=c.area;byId[c.id]=c;});
+  holes.forEach(function(h){
+    if(h.border) return;
+    var f=h.first, up=f-W; if(up<0) return;
+    var owner=byId[cid[up]]; if(!owner) return;
+    owner.holes.push(h); owner.filled+=h.area;
+  });
+  // un punto: hueco oscuro, redondo y de tamaño proporcional al ancho del dado
+  function pipLike(h,c){
+    var md=Math.min(c.x1-c.x0+1,c.y1-c.y0+1), md2=md*md;
+    var bw=h.x1-h.x0+1,bh=h.y1-h.y0+1,asp=bw/bh,round=h.area/(Math.PI/4*bw*bh);
+    return h.area>=3 && h.area>=md2*0.008 && h.area<=md2*0.09 && asp>=0.45 && asp<=2.2 && round>=0.5 && h.sy2/h.area<BR*0.6;
+  }
+  var minA=N*0.0012, dbg=window.__dbg=[], cand=dies.filter(function(c){
+    if(c.filled<minA*0.5) return false;
+    var why={filled:c.filled,bbox:[c.x0,c.y0,c.x1-c.x0+1,c.y1-c.y0+1],holes:c.holes.map(function(h){return [h.area,h.x1-h.x0+1,h.y1-h.y0+1,h.nav];})}; dbg.push(why);
+    if(c.filled<minA){why.no='small';return false;}
+    var bw=c.x1-c.x0+1,bh=c.y1-c.y0+1,asp=bw/bh;
+    if(asp<0.35||asp>2.9){why.no='aspect';return false;}
+    if(c.filled/(bw*bh)<0.4){why.no='solidity';return false;}
+    if(!c.holes.length){why.no='noholes';return false;}
+    var md=Math.min(bw,bh);
+    var odd=c.holes.filter(function(h){return h.area>=Math.max(6,md*md*0.008) && !pipLike(h,c);}).length;
+    var pl=c.holes.filter(function(h){return pipLike(h,c);}).length;
+    if(!pl){why.no='nopips';return false;}
+    var kk=Math.max(1,Math.round(Math.max(bw,bh)/Math.min(bw,bh)));
+    if(pl>6*kk){why.no='toomany '+pl;return false;}
+    if(odd>Math.max(1,Math.round(pl/6))){why.no='odd '+odd+' pl '+pl;return false;}
+    why.ring=navyRing(c); if(why.ring<0.3){why.no='ring';return false;} why.ok=1; return true;
+  });
+  if(!cand.length) return null;
+  // los dados tienen tamaños parecidos: me quedo con el grupo de tamaño similar más numeroso
+  var bestG=null;
+  cand.forEach(function(a){
+    var g=cand.filter(function(c){return c.filled>=a.filled*0.75 && c.filled<=a.filled*2.7;});
+    if(!bestG || g.length>bestG.length || (g.length===bestG.length && Math.abs(g.length-DICE)<Math.abs(bestG.length-DICE))) bestG=g;
+  });
+  cand=bestG.filter(function(c){return c.filled<=N*0.25;});
+  if(!cand.length) return null;
+  var areas=cand.map(function(c){return c.filled;}).sort(function(a,b){return a-b;});
+  var single=areas[Math.floor((areas.length-1)*0.35)];
+  // puntos: huecos redondos de tamaño razonable
+  var allP=[];
+  cand.forEach(function(c){
+    c.k=Math.max(1,Math.round(c.filled/single));
+    var dieA=c.filled/c.k;
+    c.pips=c.holes.filter(function(h){return pipLike(h,c);});
+    c.pips.forEach(function(h){allP.push(h.area);});
+  });
+  if(allP.length){
+    allP.sort(function(a,b){return a-b;});
+    var med=allP[Math.floor(allP.length/2)];
+    cand.forEach(function(c){c.pips=c.pips.filter(function(h){return h.area>=med*0.3&&h.area<=med*3.4;});});
+  }
+  // si salen más de 4 dados, quito los que menos se parecen a un dado
+  var med2=allP.length?allP[Math.floor(allP.length/2)]:1, tk=0;
+  cand.forEach(function(c){
+    tk+=c.k;
+    var bw=c.x1-c.x0+1,bh=c.y1-c.y0+1,mp=c.pips.length?c.pips.reduce(function(a,h){return a+h.area;},0)/c.pips.length:med2;
+    c.bad=Math.abs(Math.log(bw/bh/c.k))+Math.abs(Math.log(mp/med2))+(c.k>1?0.3:0)+(c.pips.length?0:1);
+  });
+  while(tk>DICE && cand.length>1){
+    var worst=cand.reduce(function(a,c){return c.bad>a.bad?c:a;});
+    cand.splice(cand.indexOf(worst),1); tk-=worst.k;
+  }
+  var sum=0, dice=0, parts=[];
+  cand.forEach(function(c){var n=Math.min(c.pips.length,6*c.k);sum+=n;dice+=c.k;parts.push({n:n,k:c.k,x:c.sx/c.area,y:c.sy/c.area});});
+  cand.sort(function(a,b){return (a.sx/a.area)-(b.sx/b.area);});
+  return {sum:sum,dice:dice,cand:cand,parts:parts};
+}
+
+/* ---------- estado ---------- */
+var hist=[], prevKey='', prevPos=null, same=0, locked=null, moving=0, debug=false, frames=0;
+function posOf(r){return r.cand.map(function(c){return [c.sx/c.area,c.sy/c.area];}).sort(function(a,b){return a[0]-b[0];});}
+function moved(a,b){
+  if(!a||!b||a.length!==b.length) return 99;
+  var m=0; for(var i=0;i<a.length;i++) m=Math.max(m,Math.hypot(a[i][0]-b[i][0],a[i][1]-b[i][1])); return m;
+}
+
+function process(){
+  if(video.readyState<2||!video.videoWidth) return;
+  var vw=video.videoWidth,vh=video.videoHeight,sc=PROC_LONG/Math.max(vw,vh),w=Math.round(vw*sc),h=Math.round(vh*sc);
+  if(w!==W||h!==H) alloc(w,h);
+  pctx.drawImage(video,0,0,W,H);
+  classify(pctx.getImageData(0,0,W,H).data);
+  var r=read(); frames++;
+  drawOverlay(r);
+  if(!r){ same=0; prevKey=''; prevPos=null; if(locked){moving++; if(moving>3) unlock();} else setStatus('wait'); return; }
+  var key=r.sum+'|'+r.dice, pos=posOf(r), mv=moved(pos,prevPos);
+  if(key===prevKey && mv<Math.max(1.5,W*0.004)) same++; else same=0;
+  prevKey=key; prevPos=pos;
+  if(same>=STABLE-1){
+    moving=0;
+    if(!locked || locked.key!==key || moved(locked.pos,pos)>W*0.01) lock(r,key,pos);
+  } else {
+    moving++;
+    if(locked && moving>3) unlock();
+    if(!locked){ setStatus('spin'); showSpin(r); }
+  }
+}
+
+function lock(r,key,pos){
+  locked={key:key,pos:pos,sum:r.sum,dice:r.dice};
+  var ok=r.dice===DICE;
+  var big=$('big'); big.className='big done'; big.textContent=r.sum;
+  var db=$('diceBox'); db.className='dice'+(ok?'':' bad'); $('dice').textContent=r.dice+(ok?' ✓':' ⚠');
+  r.parts.sort(function(a,b){return a.x-b.x;});
+  $('parts').textContent=r.parts.map(function(p){return p.n;}).join(' + ');
+  setStatus('done');
+  hist.push({sum:r.sum,ok:ok}); renderHist();
+  drawSnap(r);
+  try{navigator.vibrate&&navigator.vibrate(40);}catch(e){}
+}
+function unlock(){ locked=null; }
+function showSpin(r){
+  var big=$('big'); big.className='big spin'; big.textContent=r?r.sum:'–';
+  $('dice').textContent=r?r.dice:'–'; $('diceBox').className='dice'; $('parts').textContent='';
+}
+function setStatus(s){
+  var st=$('status');
+  if(s==='spin'){st.className='pill spin';st.textContent='Dados moviéndose';}
+  else if(s==='done'){st.className='pill done';st.textContent='Suma lista';}
+  else {st.className='pill';st.textContent=locked?'Suma lista':'Buscando dados';}
+}
+function renderHist(){
+  var ol=$('hist'); ol.textContent='';
+  hist.slice(-10).forEach(function(h){var li=document.createElement('li');li.textContent=h.sum;if(!h.ok)li.className='weak';ol.appendChild(li);});
+}
+
+function drawSnap(r){
+  var x0=W,y0=H,x1=0,y1=0;
+  r.cand.forEach(function(c){x0=Math.min(x0,c.x0);y0=Math.min(y0,c.y0);x1=Math.max(x1,c.x1);y1=Math.max(y1,c.y1);});
+  var m=Math.round(Math.max(x1-x0,y1-y0)*0.08)+4;
+  x0=Math.max(0,x0-m);y0=Math.max(0,y0-m);x1=Math.min(W-1,x1+m);y1=Math.min(H-1,y1+m);
+  var cw=x1-x0+1,ch=y1-y0+1,k=Math.max(1,Math.min(4,600/Math.max(cw,ch)));
+  snap.width=Math.round(cw*k); snap.height=Math.round(ch*k);
+  var vs=video.videoWidth/W;
+  sctx.drawImage(video,x0*vs,y0*vs,cw*vs,ch*vs,0,0,snap.width,snap.height);
+  r.cand.forEach(function(c){
+    c.pips.forEach(function(h){
+      var x=((h.sx/h.area)-x0)*k, y=((h.sy/h.area)-y0)*k, rr=Math.max(3,Math.sqrt(h.area/Math.PI)*k*0.75);
+      sctx.beginPath();sctx.arc(x,y,rr,0,Math.PI*2);sctx.fillStyle='#4ADE8F';sctx.fill();
+    });
+    var n=Math.min(c.pips.length,6*c.k), lx=((c.sx/c.area)-x0)*k, ly=(c.y0-y0)*k-6, fs=Math.max(16,(c.x1-c.x0)*k*0.32);
+    sctx.font='800 '+Math.round(fs)+'px Figtree,system-ui,sans-serif'; sctx.textAlign='center'; sctx.textBaseline='bottom';
+    sctx.lineWidth=5; sctx.strokeStyle='#0C1218'; sctx.strokeText(n,lx,Math.max(fs,ly)); sctx.fillStyle='#FFFFFF'; sctx.fillText(n,lx,Math.max(fs,ly));
+  });
+  snap.hidden=false; $('snapEmpty').hidden=true;
+  $('snapInfo').textContent='Foto usada · suma '+r.sum;
+}
+
+function drawOverlay(r){
+  var cw=overlay.clientWidth,ch=overlay.clientHeight,dpr=Math.min(window.devicePixelRatio||1,2);
+  if(overlay.width!==Math.round(cw*dpr)||overlay.height!==Math.round(ch*dpr)){overlay.width=Math.round(cw*dpr);overlay.height=Math.round(ch*dpr);}
+  octx.setTransform(dpr,0,0,dpr,0,0); octx.clearRect(0,0,cw,ch);
+  if(!W) return;
+  var s=Math.min(cw/W,ch/H), ox=(cw-W*s)/2, oy=(ch-H*s)/2;
+  if(debug){
+    for(var y=0;y<H;y+=2)for(var x=0;x<W;x+=2){var v=cls[y*W+x]; if(!v)continue;
+      octx.fillStyle=v===1?'rgba(255,220,120,.55)':'rgba(80,120,255,.35)'; octx.fillRect(ox+x*s,oy+y*s,2*s,2*s);}
+  }
+  if(!r) return;
+  octx.lineWidth=2;
+  r.cand.forEach(function(c){
+    octx.strokeStyle='rgba(255,255,255,.9)'; octx.strokeRect(ox+c.x0*s,oy+c.y0*s,(c.x1-c.x0+1)*s,(c.y1-c.y0+1)*s);
+    octx.fillStyle='#4ADE8F';
+    c.pips.forEach(function(h){octx.beginPath();octx.arc(ox+(h.sx/h.area)*s,oy+(h.sy/h.area)*s,Math.max(2,s*1.5),0,Math.PI*2);octx.fill();});
+  });
+}
+
+/* ---------- bucle y cámara ---------- */
+var gen=0;
+function loop(){
+  var my=++gen;
+  if('requestVideoFrameCallback' in HTMLVideoElement.prototype){
+    var f=function(){if(my!==gen)return;process();video.requestVideoFrameCallback(f);};
+    video.requestVideoFrameCallback(f);
+  } else {
+    var last=-1,g=function(){if(my!==gen)return;if(video.currentTime!==last){last=video.currentTime;process();}requestAnimationFrame(g);};
+    requestAnimationFrame(g);
+  }
+}
+var track=null;
+function askWake(){try{if(navigator.wakeLock&&document.visibilityState==='visible')navigator.wakeLock.request('screen').catch(function(){});}catch(e){}}
+document.addEventListener('visibilitychange',askWake);
+
+$('go').addEventListener('click',function(){
+  var err=$('err'); err.hidden=true;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    err.textContent='Este navegador no deja usar la cámara. Abre el enlace en Safari o Chrome, no dentro de WhatsApp o Instagram.'; err.hidden=false; return;
+  }
+  navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:60}}})
+  .then(function(stream){
+    video.srcObject=stream; track=stream.getVideoTracks()[0];
+    return video.play().then(function(){
+      $('start').hidden=true; setStatus('wait'); loop(); askWake();
+      var caps=track.getCapabilities?track.getCapabilities():{};
+      if(caps.zoom&&caps.zoom.max>caps.zoom.min){
+        var inp=$('zoom'); inp.min=caps.zoom.min; inp.max=caps.zoom.max; inp.step=caps.zoom.step||0.1; inp.value=caps.zoom.min; $('zoomBox').hidden=false;
+        inp.addEventListener('input',function(){track.applyConstraints({advanced:[{zoom:+inp.value}]}).catch(function(){});});
+      }
+    });
+  })
+  .catch(function(e){
+    var name=e&&e.name;
+    err.textContent= name==='NotAllowedError' ? 'Permiso de cámara denegado. Actívalo para esta web en los ajustes del navegador (en iPhone: Ajustes > Safari > Cámara) y recarga.'
+      : name==='NotReadableError' ? 'Otra app está usando la cámara. Ciérrala y vuelve a probar.'
+      : 'No he podido abrir la cámara ('+(name||'error')+'). Recarga y prueba otra vez.';
+    err.hidden=false;
+  });
+});
+$('debug').addEventListener('click',function(){debug=!debug;this.setAttribute('aria-pressed',String(debug));});
+$('clear').addEventListener('click',function(){hist=[];renderHist();});
+
+window.__dados={history:function(){return hist.slice();},frames:function(){return frames;},
+  analyze:function(img){var vw=img.naturalWidth,vh=img.naturalHeight,sc=PROC_LONG/Math.max(vw,vh),w=Math.round(vw*sc),h=Math.round(vh*sc);
+    if(w!==W||h!==H) alloc(w,h); pctx.drawImage(img,0,0,W,H); classify(pctx.getImageData(0,0,W,H).data);
+    var r=read(); return {W:W,H:H,sum:r&&r.sum,dice:r&&r.dice,dbg:window.__dbg};}};
+})();
+</script>
+</body>
+</html>
